@@ -1,0 +1,7 @@
+<RCC>
+    <qresource prefix="/">
+        <file>main.qml</file>
+        <file>FirstStartupDialog.qml</file>
+        <file>VersionDownloadDialog.qml</file>
+    </qresource>
+</RCC>
