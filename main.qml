@@ -17,6 +17,7 @@
 import QtQuick 2.9
 import QtQuick.Window 2.3
 import QtQuick.Controls 2.2
+import Qt.labs.platform 1.0
 
 Window {
     visible: true
@@ -24,11 +25,59 @@ Window {
     height: 600
     title: qsTr("REGoth Launcher")
 
+    Row {
+        id: topRow
+        Button {
+            text: qsTr("Settings")
+        }
+
+        Button {
+            text: qsTr("Check for updates")
+        }
+    }
+
+    ScrollView {
+        anchors.top: topRow.bottom
+        anchors.bottom: addInstallationButton.top
+        width: parent.width
+        clip: true
+
+        ListView {
+            id: installationsView
+            model: installations
+            delegate: Row {
+                Text {
+                    text: name
+                }
+                Button {
+                    text: qsTr("Play")
+                }
+            }
+        }
+    }
+
+    Button {
+        id: addInstallationButton
+        anchors.bottom: parent.bottom
+        text: qsTr("Add Gothic installation")
+        onClicked: installationDialog.open()
+    }
+
+    ListModel {
+        id: installations
+    }
+
+    // Dialogs
     FirstStartupDialog {
         objectName: "FirstStartupDialog"
     }
 
     VersionDownloadDialog {
         objectName: "VersionDownloadDialog"
+    }
+
+    FolderDialog {
+        id: installationDialog
+        onAccepted: installations.append({ name: installationDialog.folder.toString() })
     }
 }
