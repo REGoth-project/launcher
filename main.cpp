@@ -3,6 +3,9 @@
 #include <QDir>
 #include <QDebug>
 #include <QThread>
+#include <QVariant>
+#include <QCloseEvent>
+#include <QQmlContext>
 #include "ReleaseFetcher.h"
 #include "LauncherConfig.h"
 #include "CurlDownloader.h"
@@ -40,15 +43,55 @@ private:
     std::unique_ptr<CurlDownloader> m_downloader;
 };
 
+class InstallationEntry : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(QString name READ name WRITE setName NOTIFY nameChanged)
+
+public:
+    void setName(QString name)
+    {
+        m_name = name;
+        emit nameChanged(name);
+    }
+
+    QString name() const {
+        return m_name;
+    }
+
+signals:
+    void nameChanged(QString);
+
+private:
+    QString m_name;
+};
+
 class MainWindow : QObject
 {
     Q_OBJECT
 public:
 
-    MainWindow(QObject *root, LauncherConfig cfg)
-        : m_root(root)
-        , m_cfg(cfg)
+    MainWindow(QQmlApplicationEngine& engine, LauncherConfig& cfg)
+        : m_cfg(cfg)
+        , m_engine(engine)
     {
+        m_ctx = engine.rootContext();
+
+        for (const auto& inst : cfg.getGothicInstallations()) {
+            InstallationEntry *entry = new InstallationEntry();
+            entry->setName(QString(inst.c_str()));
+
+            m_installationList.push_back(entry);
+        }
+
+        m_ctx->setContextProperty("installations", QVariant::fromValue(m_installationList));
+
+        engine.load(QUrl(QStringLiteral("qrc:/main.qml")));
+        if (engine.rootObjects().isEmpty())
+            throw std::runtime_error("Error while loading main.qml");
+
+        m_root = engine.rootObjects()[0];
+
         // Check if this is the first time the launcher is used
         if (m_cfg.getDefaultRelease().empty() && m_cfg.getReleases().empty())
         {
@@ -57,6 +100,9 @@ public:
                 SLOT(downloadLatestVersion()));
             QMetaObject::invokeMethod(dialog, "open");
         }
+
+        connect(m_root, SIGNAL(addInstallation(QUrl)),
+            SLOT(addInstallation(QUrl)));
     }
 
 public slots:
@@ -85,6 +131,15 @@ public slots:
 
         // Run, Forest, run!
         workerThread->start();
+    }
+
+    void addInstallation(QUrl url)
+    {
+        m_cfg.getGothicInstallations().push_back(url.toString().toStdString());
+        InstallationEntry *entry = new InstallationEntry();
+        entry->setName(url.toString());
+        m_installationList.push_back(entry);
+        m_ctx->setContextProperty("installations", QVariant::fromValue(m_installationList));
     }
 
     void checkAvailableVersions()
@@ -117,8 +172,11 @@ public slots:
 
 private:
     CurlThread *workerThread;
-    QObject * m_root;
-    LauncherConfig m_cfg;
+    QObject *m_root;
+    QQmlContext *m_ctx;
+    LauncherConfig& m_cfg;
+    QList<QObject*> m_installationList;
+    QQmlApplicationEngine& m_engine;
 };
 
 /// Open the config file in the home directory or creates it if it doesn't exist yet
@@ -156,6 +214,17 @@ static LauncherConfig openConfigFile()
     }
 }
 
+/// Saves the launcher configuration before closing the app
+static void saveConfig(const LauncherConfig& cfg)
+{
+    QDir home = QDir::home();
+    home.cd(".regoth");
+
+    std::ofstream stream(home.absoluteFilePath("launcher.json").toStdString().c_str());
+    stream << cfg.serialize();
+    stream.close();
+}
+
 int main(int argc, char *argv[])
 {
     LauncherConfig cfg = openConfigFile();
@@ -164,14 +233,14 @@ int main(int argc, char *argv[])
     QGuiApplication app(argc, argv);
 
     QQmlApplicationEngine engine;
-    engine.load(QUrl(QStringLiteral("qrc:/main.qml")));
 
-    if (engine.rootObjects().isEmpty())
-        return -1;
+    MainWindow window(engine, cfg);
 
-    MainWindow window(engine.rootObjects()[0], cfg);
+    int retVal = app.exec();
 
-    return app.exec();
+    saveConfig(cfg);
+
+    return retVal;
 }
 
 #include "main.moc"

@@ -20,6 +20,9 @@ import QtQuick.Controls 2.2
 import Qt.labs.platform 1.0
 
 Window {
+    signal addInstallation(url name)
+    signal removeInstallation(int position)
+
     visible: true
     width: 800
     height: 600
@@ -63,10 +66,6 @@ Window {
         onClicked: installationDialog.open()
     }
 
-    ListModel {
-        id: installations
-    }
-
     // Dialogs
     FirstStartupDialog {
         objectName: "FirstStartupDialog"
@@ -78,6 +77,6 @@ Window {
 
     FolderDialog {
         id: installationDialog
-        onAccepted: installations.append({ name: installationDialog.folder.toString() })
+        onAccepted: addInstallation(installationDialog.folder)
     }
 }
