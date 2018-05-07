@@ -79,4 +79,8 @@ Window {
         id: installationDialog
         onAccepted: addInstallation(installationDialog.folder)
     }
+
+    DownloadErrorDialog {
+        objectName: "DownloadErrorDialog"
+    }
 }
