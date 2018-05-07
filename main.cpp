@@ -6,6 +6,7 @@
 #include <QVariant>
 #include <QCloseEvent>
 #include <QQmlContext>
+#include <QUrl>
 #include "ReleaseFetcher.h"
 #include "LauncherConfig.h"
 #include "CurlDownloader.h"
@@ -62,10 +63,12 @@ private:
     Release m_release;
 };
 
+/// Represents an entry in the installation list
 class InstallationEntry : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(QString name READ name WRITE setName NOTIFY nameChanged)
+    Q_PROPERTY(QString url READ url WRITE setUrl NOTIFY urlChanged)
 
 public:
     void setName(QString name)
@@ -79,11 +82,24 @@ public:
         return m_name;
     }
 
+    void setUrl(QString url)
+    {
+        m_url = url;
+        emit urlChanged(url);
+    }
+
+    QString url() const
+    {
+        return m_url;
+    }
+
 signals:
     void nameChanged(QString);
+    void urlChanged(QString);
 
 private:
     QString m_name;
+    QString m_url;
 };
 
 static void createLinkToRelease(QString tagName)
@@ -117,7 +133,8 @@ public:
 
         for (const auto& inst : cfg.getGothicInstallations()) {
             InstallationEntry *entry = new InstallationEntry();
-            entry->setName(QString(inst.c_str()));
+            entry->setName(QString(inst.Name.c_str()));
+            entry->setUrl(QString(inst.Url.c_str()));
 
             m_installationList.push_back(entry);
         }
@@ -175,9 +192,15 @@ public slots:
 
     void addInstallation(QUrl url)
     {
-        m_cfg.getGothicInstallations().push_back(url.toString().toStdString());
+        QString urlString = url.toString(QUrl::RemoveScheme | QUrl::RemoveFragment);
+        Installation inst;
+        inst.Name = urlString.toStdString();
+        inst.Url = urlString.toStdString();
+
+        m_cfg.getGothicInstallations().push_back(inst);
         InstallationEntry *entry = new InstallationEntry();
-        entry->setName(url.toString());
+        entry->setName(urlString);
+        entry->setName(urlString);
         m_installationList.push_back(entry);
         m_ctx->setContextProperty("installations", QVariant::fromValue(m_installationList));
     }

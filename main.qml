@@ -18,6 +18,7 @@ import QtQuick 2.9
 import QtQuick.Window 2.3
 import QtQuick.Controls 2.2
 import Qt.labs.platform 1.0
+import QtQuick.Layouts 1.3
 
 Window {
     signal addInstallation(url name)
@@ -48,7 +49,7 @@ Window {
         ListView {
             id: installationsView
             model: installations
-            delegate: Row {
+            delegate: RowLayout {
                 Text {
                     text: name
                 }

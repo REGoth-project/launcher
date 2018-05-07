@@ -21,6 +21,7 @@
 #include <vector>
 #include <nlohmann/json.hpp>
 #include "Release.h"
+#include "Installation.h"
 
 class LauncherConfig
 {
@@ -35,7 +36,7 @@ public:
     const std::string& getReleasesEndpoint() const { return m_releasesEndpoint; }
     void setReleasesEndpoint(const std::string& endpoint) { m_releasesEndpoint = endpoint; }
 
-    std::vector<std::string>& getGothicInstallations() { return m_gothicInstallations; }
+    std::vector<Installation>& getGothicInstallations() { return m_gothicInstallations; }
 
     bool getCheckReleasesOnStartup() const { return m_checkReleasesOnStartup; }
     void setCheckReleasesOnStartup(bool check) { m_checkReleasesOnStartup = check; }
@@ -45,7 +46,7 @@ public:
     static LauncherConfig deserialize(const nlohmann::json& data);
 private:
     std::vector<Release> m_releases;
-    std::vector<std::string> m_gothicInstallations;
+    std::vector<Installation> m_gothicInstallations;
     std::string m_defaultRelease;
     bool m_showPrereleases;
     bool m_checkReleasesOnStartup;

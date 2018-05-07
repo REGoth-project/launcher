@@ -36,7 +36,7 @@ json LauncherConfig::serialize() const
     j["gothic_installations"] = {};
     for(const auto& inst : m_gothicInstallations)
     {
-        j["gothic_installations"].push_back(inst);
+        j["gothic_installations"].push_back(inst.serialize());
     }
 
     return j;
@@ -56,7 +56,7 @@ LauncherConfig LauncherConfig::deserialize(const json& j)
 
     for(const auto& inst : j["gothic_installations"])
     {
-        cfg.m_gothicInstallations.push_back(inst.get<std::string>());
+        cfg.m_gothicInstallations.push_back(Installation::deserialize(inst));
     }
 
     cfg.setDefaultRelease(j["default_release"].get<std::string>());
