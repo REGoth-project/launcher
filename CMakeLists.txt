@@ -24,7 +24,8 @@ set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(Qt5 COMPONENTS Core Quick REQUIRED)
-find_package(curl)
+find_package(CURL REQUIRED)
+find_package(LibArchive REQUIRED)
 
 if(WIN32)
     set(WINDOWS_RES_FILE ${CMAKE_CURRENT_BINARY_DIR}/resources.obj)
@@ -48,8 +49,9 @@ add_executable(${PROJECT_NAME}
     "ReleaseFetcher.cpp"
     "LauncherConfig.cpp"
     "CurlDownloader.cpp"
+    "ArchiveExtractor.cpp"
     "qml.qrc"
-    ${WINDOWS_RES_FILE})
+    ${WINDOWS_RES_FILE} )
 
-target_include_directories(${PROJECT_NAME} PRIVATE "include" ${CURL_INCLUDE_DIRS})
-target_link_libraries(${PROJECT_NAME} Qt5::Core Qt5::Quick ${CURL_LIBRARIES})
+target_include_directories(${PROJECT_NAME} PRIVATE "include" ${CURL_INCLUDE_DIRS} ${LibArchive_INCLUDE_DIRS})
+target_link_libraries(${PROJECT_NAME} Qt5::Core Qt5::Quick ${CURL_LIBRARIES} ${LibArchive_LIBRARIES})
