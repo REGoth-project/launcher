@@ -9,11 +9,13 @@
 #include "ReleaseFetcher.h"
 #include "LauncherConfig.h"
 #include "CurlDownloader.h"
+#include "ArchiveExtractor.h"
 #include <nlohmann/json.hpp>
 #include <memory>
 #include <iostream>
 #include <fstream>
 #include <thread>
+#include <string>
 
 using json = nlohmann::json;
 
@@ -31,9 +33,25 @@ public:
         });
     }
 
-    void run() {
+    void run()
+    {
         data = m_downloader->get();
         return;
+    }
+
+    QString error() const
+    {
+        return QString(m_downloader->getError().c_str());
+    }
+
+    Release release() const
+    {
+        return m_release;
+    }
+
+    void setRelease(Release rel)
+    {
+        m_release = rel;
     }
 
 signals:
@@ -41,6 +59,7 @@ signals:
 
 private:
     std::unique_ptr<CurlDownloader> m_downloader;
+    Release m_release;
 };
 
 class InstallationEntry : public QObject
@@ -55,7 +74,8 @@ public:
         emit nameChanged(name);
     }
 
-    QString name() const {
+    QString name() const
+    {
         return m_name;
     }
 
@@ -65,6 +85,24 @@ signals:
 private:
     QString m_name;
 };
+
+static void createLinkToRelease(QString tagName)
+{
+    QDir home = QDir::home();
+    home.cd(".REGoth");
+
+    home.rmpath("REGoth");
+    QDir version = QDir::home();
+    version.cd(".REGoth");
+    version.cd("releases");
+    version.cd(tagName);
+
+#if Q_OS_WIN
+    QFile::link(version.absolutePath(), home.absoluteFilePath("current") + ".lnk");
+#else
+    QFile::link(version.absolutePath(), home.absoluteFilePath("current"));
+#endif
+}
 
 class MainWindow : QObject
 {
@@ -129,6 +167,8 @@ public slots:
         connect(dialog, SIGNAL(cancelDownload()),
             SLOT(cancelDownload()));
 
+        workerThread->setRelease(rel);
+
         // Run, Forest, run!
         workerThread->start();
     }
@@ -155,6 +195,28 @@ public slots:
     {
         QObject *dialog = m_root->findChild<QObject*>("VersionDownloadDialog");
         QMetaObject::invokeMethod(dialog, "close");
+
+        if(workerThread->data.empty() && workerThread->continueDownload)
+        {
+            QObject *dialog = m_root->findChild<QObject*>("DownloadErrorDialog");
+            dialog->setProperty("errorMessage", workerThread->error());
+            QMetaObject::invokeMethod(dialog, "open");
+        }
+        else
+        {
+            Release r = workerThread->release();
+
+            QDir home = QDir::home();
+            home.cd(".REGoth");
+            home.cd("releases");
+            home.mkdir(r.Tag.c_str());
+            home.cd(r.Tag.c_str());
+
+            extractArchive(workerThread->data, home.absolutePath().toStdString());
+            m_cfg.getReleases().push_back(r);
+            m_cfg.setDefaultRelease(r.Tag);
+            createLinkToRelease(r.Tag.c_str());
+        }
     }
 
     void updateProgress(double total, double current)
@@ -162,10 +224,11 @@ public slots:
         QObject *dialog = m_root->findChild<QObject*>("VersionDownloadDialog");
         if (total == 0)
         {
-            dialog->setProperty("progress", (float)0);
+            dialog->setProperty("isIndeterminate", true);
         }
         else
         {
+            dialog->setProperty("isIndeterminate", false);
             dialog->setProperty("progress", (float)(current / total));
         }
     }
@@ -183,14 +246,19 @@ private:
 static LauncherConfig openConfigFile()
 {
     QDir home = QDir::home();
-    if(!home.exists(".regoth"))
+    if(!home.exists(".REGoth"))
     {
-        home.mkdir(".regoth");
+        home.mkdir(".REGoth");
     }
 
-    if(!home.cd(".regoth"))
+    if(!home.cd(".REGoth"))
     {
         throw std::runtime_error("Cannot access .regoth directory");
+    }
+
+    if(!home.exists("releases"))
+    {
+        home.mkdir("releases");
     }
 
     if(home.exists("launcher.json"))
@@ -218,7 +286,7 @@ static LauncherConfig openConfigFile()
 static void saveConfig(const LauncherConfig& cfg)
 {
     QDir home = QDir::home();
-    home.cd(".regoth");
+    home.cd(".REGoth");
 
     std::ofstream stream(home.absoluteFilePath("launcher.json").toStdString().c_str());
     stream << cfg.serialize();

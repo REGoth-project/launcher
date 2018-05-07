@@ -14,6 +14,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include <string.h>
 #include <curl/curl.h>
 #include "CurlDownloader.h"
 
@@ -54,6 +55,7 @@ std::vector<std::uint8_t>& CurlDownloader::get()
 {
     CURL *curl = (CURL *)m_curl;
     char errbuf[CURL_ERROR_SIZE];
+    memset(errbuf, 0, CURL_ERROR_SIZE);
     curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&m_buf);

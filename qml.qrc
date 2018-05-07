@@ -3,5 +3,6 @@
         <file>main.qml</file>
         <file>FirstStartupDialog.qml</file>
         <file>VersionDownloadDialog.qml</file>
+        <file>DownloadErrorDialog.qml</file>
     </qresource>
 </RCC>
