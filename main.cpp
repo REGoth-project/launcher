@@ -113,8 +113,8 @@ static void createLinkToRelease(QString tagName)
     version.cd("releases");
     version.cd(tagName);
 
-#if Q_OS_WIN
-    QFile::link(version.absolutePath(), home.absoluteFilePath("current") + ".lnk");
+#ifdef Q_OS_WIN
+    QFile::link(version.absolutePath(), home.absoluteFilePath("current") + QString(".lnk"));
 #else
     QFile::link(version.absolutePath(), home.absoluteFilePath("current"));
 #endif
