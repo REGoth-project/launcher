@@ -19,10 +19,12 @@ import QtQuick.Window 2.3
 import QtQuick.Controls 2.2
 import Qt.labs.platform 1.0
 import QtQuick.Layouts 1.3
+import QtQuick.Dialogs 1.2
 
 Window {
-    signal addInstallation(url name)
+    signal addInstallation(string name)
     signal removeInstallation(int position)
+    signal playGame(string url)
 
     visible: true
     width: 800
@@ -55,6 +57,7 @@ Window {
                 }
                 Button {
                     text: qsTr("Play")
+                    onClicked: playGame(url)
                 }
             }
         }
@@ -78,10 +81,26 @@ Window {
 
     FolderDialog {
         id: installationDialog
-        onAccepted: addInstallation(installationDialog.folder)
+        onAccepted: {
+            var path = installationDialog.folder.toString();
+            // remove prefixed "file://"
+            path= path.replace(/^(file|http|qrc):\/{2}/,"");
+            // unescape html codes like '%23' for '#'
+            var cleanPath = decodeURIComponent(path);
+            addInstallation(cleanPath)
+        }
     }
 
     DownloadErrorDialog {
         objectName: "DownloadErrorDialog"
+    }
+
+    MessageDialog {
+        property string logFile: ""
+
+        objectName: "CrashDialog"
+        title: qsTr("REGoth has crashed")
+        text: qsTr("A log of the run has been written to %1").arg(logFile)
+        icon: StandardIcon.Critical
     }
 }

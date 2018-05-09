@@ -7,6 +7,8 @@
 #include <QCloseEvent>
 #include <QQmlContext>
 #include <QUrl>
+#include <QProcess>
+#include <QDateTime>
 #include "ReleaseFetcher.h"
 #include "LauncherConfig.h"
 #include "CurlDownloader.h"
@@ -156,8 +158,11 @@ public:
             QMetaObject::invokeMethod(dialog, "open");
         }
 
-        connect(m_root, SIGNAL(addInstallation(QUrl)),
-            SLOT(addInstallation(QUrl)));
+        connect(m_root, SIGNAL(addInstallation(QString)),
+            SLOT(addInstallation(QString)));
+
+        connect(m_root, SIGNAL(playGame(QString)),
+                SLOT(playGame(QString)));
     }
 
 public slots:
@@ -190,9 +195,9 @@ public slots:
         workerThread->start();
     }
 
-    void addInstallation(QUrl url)
+    void addInstallation(QString urlString)
     {
-        QString urlString = url.toString(QUrl::RemoveScheme | QUrl::RemoveFragment);
+        //QString urlString = url.toString(QUrl::RemoveScheme | QUrl::RemoveFragment);
         Installation inst;
         inst.Name = urlString.toStdString();
         inst.Url = urlString.toStdString();
@@ -253,6 +258,37 @@ public slots:
         {
             dialog->setProperty("isIndeterminate", false);
             dialog->setProperty("progress", (float)(current / total));
+        }
+    }
+
+    void playGame(QString url)
+    {
+        QProcess proc;
+        QDir home = QDir::home();
+        home.cd(".REGoth");
+        home.mkdir("logs");
+        home.cd("logs");
+        QString logname = QString("crashlog_") + QDateTime::currentDateTime().toString("yyyy-MM-ddTHH:mm:ss") + QString(".txt");
+        QString logfilePath = home.absoluteFilePath(logname);
+        home.cdUp();
+        home.cd("current");
+        proc.setWorkingDirectory(home.absolutePath());
+        proc.start(home.absoluteFilePath("REGoth"), QStringList() << "-g" << url);
+        proc.waitForFinished();
+        int ecode = proc.exitCode();
+        if(proc.exitCode() != 0)
+        {
+            QFile logfile(logfilePath);
+            logfile.open(QIODevice::WriteOnly);
+            logfile.write("############ BEGIN STDOUT LOG ############\n");
+            logfile.write(proc.readAllStandardOutput());
+            logfile.write("############ BEGIN STDERR LOG ############\n");
+            logfile.write(proc.readAllStandardError());
+            logfile.close();
+
+            QObject *dialog = m_root->findChild<QObject*>("CrashDialog");
+            dialog->setProperty("logFile", logfilePath);
+            QMetaObject::invokeMethod(dialog, "open");
         }
     }
 
