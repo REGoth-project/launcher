@@ -274,7 +274,7 @@ public slots:
         home.cd("current");
         proc.setWorkingDirectory(home.absolutePath());
         proc.start(home.absoluteFilePath("REGoth"), QStringList() << "-g" << url);
-        proc.waitForFinished();
+        proc.waitForFinished(-1);
         int ecode = proc.exitCode();
         if(proc.exitCode() != 0)
         {
