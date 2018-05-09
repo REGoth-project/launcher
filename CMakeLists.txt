@@ -73,7 +73,7 @@ add_executable(${PROJECT_NAME}
     ${WINDOWS_RES_FILE} )
 
 target_include_directories(${PROJECT_NAME} PRIVATE "include" ${CURL_INCLUDE_DIRS} ${LibArchive_INCLUDE_DIRS})
-target_link_libraries(${PROJECT_NAME} PRIVATE Qt5::Core Qt5::Quick ${CURL_LIBRARIES} ${LibArchive_LIBRARIES} ws2_32 ${OpenSSL_LIBRARIES} ${zlib_LIBRARIES})
+target_link_libraries(${PROJECT_NAME} PRIVATE Qt5::Core Qt5::Quick ${CURL_LIBRARIES} ${LibArchive_LIBRARIES})
 
 install(TARGETS REGothLauncher
     RUNTIME DESTINATION bin)
@@ -117,12 +117,12 @@ elseif(APPLE)
     set(CPACK_BUNDLE_ICON "${CMAKE_SOURCE_DIR}/gothic.icns")
     set(CPACK_BUNDLE_PLIST "${CMAKE_SOURCE_DIR}/Info.plist")
 elseif(BUILD_DEB)
-    set(CPACK_GENERATOR Deb)
-    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libsndfile1 (>= 1.0.28), libarchive13 (>= 3.2.2), libcurl3 (>= 7.58.0)")
+    set(CPACK_GENERATOR DEB)
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libqt5quick5 (>= 5.9.5), libsndfile1 (>= 1.0.28), libarchive13 (>= 3.2.2), libcurl3 (>= 7.58.0)")
     set(CPACK_DEBIAN_PACKAGE_MAINTAINER "bertolaccinifrancesco@gmail.com")
 elseif(BUILD_RPM)
     set(CPACK_GENERATOR RPM)
-    set(CPACK_RPM_PACKAGE_REQUIRES "libsndfile >= 1.0.28, libarchive >= 3.2.2, libcurl >= 7.58.0")
+    set(CPACK_RPM_PACKAGE_REQUIRES "qt5 >= 5.10.0, libsndfile >= 1.0.28, libarchive >= 3.2.2, libcurl >= 7.58.0")
 endif()
 
 include(CPack)
