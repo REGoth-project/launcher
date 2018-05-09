@@ -27,6 +27,27 @@ find_package(Qt5 COMPONENTS Core Quick REQUIRED)
 find_package(CURL REQUIRED)
 find_package(LibArchive REQUIRED)
 
+if(Qt5_FOUND AND WIN32 AND TARGET Qt5::qmake AND NOT TARGET Qt5::windeployqt)
+    get_target_property(_qt5_qmake_location Qt5::qmake IMPORTED_LOCATION)
+
+    execute_process(
+        COMMAND "${_qt5_qmake_location}" -query QT_INSTALL_PREFIX
+        RESULT_VARIABLE return_code
+        OUTPUT_VARIABLE qt5_install_prefix
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+
+    set(imported_location "${qt5_install_prefix}/bin/windeployqt.exe")
+
+    if(EXISTS ${imported_location})
+        add_executable(Qt5::windeployqt IMPORTED)
+
+        set_target_properties(Qt5::windeployqt PROPERTIES
+            IMPORTED_LOCATION ${imported_location}
+        )
+    endif()
+endif()
+
 if(WIN32)
     set(WINDOWS_RES_FILE ${CMAKE_CURRENT_BINARY_DIR}/resources.obj)
     if (MSVC)
@@ -42,8 +63,6 @@ if(WIN32)
     endif()
 endif()
 
-
-
 add_executable(${PROJECT_NAME}
     "main.cpp"
     "ReleaseFetcher.cpp"
@@ -54,4 +73,56 @@ add_executable(${PROJECT_NAME}
     ${WINDOWS_RES_FILE} )
 
 target_include_directories(${PROJECT_NAME} PRIVATE "include" ${CURL_INCLUDE_DIRS} ${LibArchive_INCLUDE_DIRS})
-target_link_libraries(${PROJECT_NAME} Qt5::Core Qt5::Quick ${CURL_LIBRARIES} ${LibArchive_LIBRARIES})
+target_link_libraries(${PROJECT_NAME} PRIVATE Qt5::Core Qt5::Quick ${CURL_LIBRARIES} ${LibArchive_LIBRARIES} ws2_32 ${OpenSSL_LIBRARIES} ${zlib_LIBRARIES})
+
+install(TARGETS REGothLauncher
+    RUNTIME DESTINATION bin)
+
+
+if(TARGET Qt5::windeployqt)
+    # execute windeployqt in a tmp directory after build
+    add_custom_command(TARGET ${PROJECT_NAME}
+        POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E remove_directory "${CMAKE_CURRENT_BINARY_DIR}/windeployqt"
+        COMMAND set PATH=%PATH%$<SEMICOLON>${qt5_install_prefix}/bin
+        COMMAND Qt5::windeployqt --dir "${CMAKE_CURRENT_BINARY_DIR}/windeployqt" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/$<TARGET_FILE_NAME:${PROJECT_NAME}>"
+    )
+
+    # copy deployment directory during installation
+    install(
+        DIRECTORY
+        "${CMAKE_CURRENT_BINARY_DIR}/windeployqt/"
+        DESTINATION bin
+    )
+endif()
+
+set(CPACK_PACKAGE_NAME "REGothLauncher")
+set(CPACK_PACKAGE_VENDOR "REGoth Project")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Launcher application for REGoth")
+set(CPACK_PACKAGE_VERSION "0.1.0")
+set(CPACK_PACKAGE_VERSION_MAJOR "0")
+set(CPACK_PACKAGE_VERSION_MINOR "1")
+set(CPACK_PACKAGE_VERSION_PATCH "0")
+set(CPACK_PACKAGE_INSTALL_DIRECTORY "REGoth")
+set(CPACK_SYSTEM_NAME "${CMAKE_SYSTEM_NAME}")
+set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CPACK_SYSTEM_NAME}")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/COPYING.md")
+
+if(WIN32)
+    set(CPACK_GENERATOR NSIS)
+    set(CPACK_NSIS_MODIFY_PATH ON)
+elseif(APPLE)
+    set(CPACK_GENERATOR Bundle)
+    set(CPACK_BUNDLE_NAME "REGoth Launcher")
+    set(CPACK_BUNDLE_ICON "${CMAKE_SOURCE_DIR}/gothic.icns")
+    set(CPACK_BUNDLE_PLIST "${CMAKE_SOURCE_DIR}/Info.plist")
+elseif(BUILD_DEB)
+    set(CPACK_GENERATOR Deb)
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libsndfile1 (>= 1.0.28), libarchive13 (>= 3.2.2), libcurl3 (>= 7.58.0)")
+    set(CPACK_DEBIAN_PACKAGE_MAINTAINER "bertolaccinifrancesco@gmail.com")
+elseif(BUILD_RPM)
+    set(CPACK_GENERATOR RPM)
+    set(CPACK_RPM_PACKAGE_REQUIRES "libsndfile >= 1.0.28, libarchive >= 3.2.2, libcurl >= 7.58.0")
+endif()
+
+include(CPack)
