@@ -199,13 +199,13 @@ public slots:
     {
         //QString urlString = url.toString(QUrl::RemoveScheme | QUrl::RemoveFragment);
         Installation inst;
-        inst.Name = urlString.toStdString();
+        inst.Name = QDir(urlString).dirName().toStdString();
         inst.Url = urlString.toStdString();
 
         m_cfg.getGothicInstallations().push_back(inst);
         InstallationEntry *entry = new InstallationEntry();
-        entry->setName(urlString);
-        entry->setName(urlString);
+        entry->setName(QDir(urlString).dirName());
+        entry->setUrl(urlString);
         m_installationList.push_back(entry);
         m_ctx->setContextProperty("installations", QVariant::fromValue(m_installationList));
     }

@@ -31,13 +31,16 @@ Window {
     height: 600
     title: qsTr("REGoth Launcher")
 
-    Row {
+    RowLayout {
         id: topRow
+        Logo {}
         Button {
+            id: settingsButton
             text: qsTr("Settings")
         }
 
         Button {
+            id: updatesButton
             text: qsTr("Check for updates")
         }
     }
@@ -51,14 +54,11 @@ Window {
         ListView {
             id: installationsView
             model: installations
-            delegate: RowLayout {
-                Text {
-                    text: name
-                }
-                Button {
-                    text: qsTr("Play")
-                    onClicked: playGame(url)
-                }
+            spacing: 5
+            delegate: InstallationEntry {
+                topText: name
+                subText: url
+                onPlayed: playGame(url)
             }
         }
     }

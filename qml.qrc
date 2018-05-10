@@ -4,5 +4,16 @@
         <file>FirstStartupDialog.qml</file>
         <file>VersionDownloadDialog.qml</file>
         <file>DownloadErrorDialog.qml</file>
+        <file>InstallationEntry.qml</file>
+        <file>Logo.qml</file>
+
+        <!-- assets -->
+        <file>assets/Metamorphous-Regular.ttf</file>
+        <file>assets/delete.svg</file>
+        <file>assets/reload.svg</file>
+        <file>assets/settings.svg</file>
+        <file>assets/play.svg</file>
+        <file>assets/reload.svg</file>
+        <file>assets/folder-add.svg</file>
     </qresource>
 </RCC>
