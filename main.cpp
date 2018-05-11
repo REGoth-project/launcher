@@ -9,11 +9,13 @@
 #include <QUrl>
 #include <QProcess>
 #include <QDateTime>
+#include <QFuture>
 #include "ReleaseFetcher.h"
 #include "LauncherConfig.h"
 #include "CurlDownloader.h"
 #include "ArchiveExtractor.h"
 #include <nlohmann/json.hpp>
+#include <date.h>
 #include <memory>
 #include <iostream>
 #include <fstream>
@@ -109,7 +111,10 @@ static void createLinkToRelease(QString tagName)
     QDir home = QDir::home();
     home.cd(".REGoth");
 
-    home.rmpath("REGoth");
+    QDir current = QDir::home();
+    current.cd(".REGoth");
+    if(current.cd("current")) current.removeRecursively();
+
     QDir version = QDir::home();
     version.cd(".REGoth");
     version.cd("releases");
@@ -163,6 +168,9 @@ public:
 
         connect(m_root, SIGNAL(playGame(QString)),
                 SLOT(playGame(QString)));
+
+        connect(m_root, SIGNAL(checkNewReleases()),
+                SLOT(checkNewReleases()));
     }
 
 public slots:
@@ -178,26 +186,23 @@ public slots:
         dialog->setProperty("versionName", QString(rel.Name.c_str()));
         dialog->setProperty("fileName", QString(rel.DownloadUrl.c_str()));
 
-        workerThread = new CurlThread(rel.DownloadUrl);
-        // Connect our signal and slot
-        connect(workerThread, SIGNAL(progressChanged(double, double)),
+        m_downloadThread = new CurlThread(rel.DownloadUrl);
+        connect(m_downloadThread, SIGNAL(progressChanged(double, double)),
             SLOT(updateProgress(double, double)));
-        // Setup callback for cleanup when it finishes
-        connect(workerThread, SIGNAL(finished()),
+        connect(m_downloadThread, SIGNAL(finished()),
             SLOT(downloadComplete()));
 
         connect(dialog, SIGNAL(cancelDownload()),
             SLOT(cancelDownload()));
 
-        workerThread->setRelease(rel);
+        m_downloadThread->setRelease(rel);
 
         // Run, Forest, run!
-        workerThread->start();
+        m_downloadThread->start();
     }
 
     void addInstallation(QString urlString)
     {
-        //QString urlString = url.toString(QUrl::RemoveScheme | QUrl::RemoveFragment);
         Installation inst;
         inst.Name = QDir(urlString).dirName().toStdString();
         inst.Url = urlString.toStdString();
@@ -210,13 +215,36 @@ public slots:
         m_ctx->setContextProperty("installations", QVariant::fromValue(m_installationList));
     }
 
-    void checkAvailableVersions()
+    void checkNewReleases()
     {
+        ReleaseFetcher fetcher(m_cfg.getReleasesEndpoint());
+        Release latest;
+        fetcher.getLatestRelease(&latest);
+        if(!m_cfg.getDefaultRelease().empty() && !m_cfg.getReleases().empty())
+        {
+            date::Date latestDate = date::Date::fromIsoDatetime(latest.ReleaseDate);
+            for(const auto& rel : m_cfg.getReleases())
+            {
+                date::Date relDate = date::Date::fromIsoDatetime(rel.ReleaseDate);
+                if(relDate >= latestDate)
+                {
+                    QObject *dialog = m_root->findChild<QObject*>("UpToDateDialog");
+                    QMetaObject::invokeMethod(dialog, "open");
+                    return;
+                }
+            }
+        }
+
+        QObject *dialog = m_root->findChild<QObject*>("NewReleaseAvailableDialog");
+        dialog->setProperty("releaseName", QString(latest.Name.c_str()));
+        connect(dialog, SIGNAL(yes()),
+                SLOT(downloadLatestVersion()));
+        QMetaObject::invokeMethod(dialog, "open");
     }
 
     void cancelDownload()
     {
-        workerThread->continueDownload = false;
+        m_downloadThread->continueDownload = false;
     }
 
     void downloadComplete()
@@ -224,15 +252,15 @@ public slots:
         QObject *dialog = m_root->findChild<QObject*>("VersionDownloadDialog");
         QMetaObject::invokeMethod(dialog, "close");
 
-        if(workerThread->data.empty() && workerThread->continueDownload)
+        if(m_downloadThread->data.empty() && m_downloadThread->continueDownload)
         {
             QObject *dialog = m_root->findChild<QObject*>("DownloadErrorDialog");
-            dialog->setProperty("errorMessage", workerThread->error());
+            dialog->setProperty("errorMessage", m_downloadThread->error());
             QMetaObject::invokeMethod(dialog, "open");
         }
         else
         {
-            Release r = workerThread->release();
+            Release r = m_downloadThread->release();
 
             QDir home = QDir::home();
             home.cd(".REGoth");
@@ -240,7 +268,7 @@ public slots:
             home.mkdir(r.Tag.c_str());
             home.cd(r.Tag.c_str());
 
-            extractArchive(workerThread->data, home.absolutePath().toStdString());
+            extractArchive(m_downloadThread->data, home.absolutePath().toStdString());
             m_cfg.getReleases().push_back(r);
             m_cfg.setDefaultRelease(r.Tag);
             createLinkToRelease(r.Tag.c_str());
@@ -293,7 +321,7 @@ public slots:
     }
 
 private:
-    CurlThread *workerThread;
+    CurlThread *m_downloadThread;
     QObject *m_root;
     QQmlContext *m_ctx;
     LauncherConfig& m_cfg;

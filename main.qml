@@ -25,6 +25,7 @@ Window {
     signal addInstallation(string name)
     signal removeInstallation(int position)
     signal playGame(string url)
+    signal checkNewReleases()
 
     visible: true
     width: 800
@@ -42,6 +43,7 @@ Window {
         Button {
             id: updatesButton
             text: qsTr("Check for updates")
+            onClicked: checkNewReleases()
         }
     }
 
@@ -103,4 +105,18 @@ Window {
         text: qsTr("A log of the run has been written to %1").arg(logFile)
         icon: StandardIcon.Critical
     }
+
+    NewReleaseAvailableDialog {
+        objectName: "NewReleaseAvailableDialog"
+    }
+
+    MessageDialog {
+        objectName: "UpToDateDialog"
+        title: qsTr("You are up-to-date!")
+        icon: StandardIcon.Information
+        text: qsTr("You already have the latest REGoth release available")
+        visible: false
+        modality: Qt.WindowModal
+    }
+
 }

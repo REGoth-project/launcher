@@ -6,6 +6,7 @@
         <file>DownloadErrorDialog.qml</file>
         <file>InstallationEntry.qml</file>
         <file>Logo.qml</file>
+        <file>NewReleaseAvailableDialog.qml</file>
 
         <!-- assets -->
         <file>assets/Metamorphous-Regular.ttf</file>
