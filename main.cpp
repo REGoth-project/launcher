@@ -10,9 +10,11 @@
 #include <QProcess>
 #include <QDateTime>
 #include <QFuture>
+#include <QNetworkAccessManager>
+#include <QNetworkRequest>
+#include <QNetworkReply>
 #include "ReleaseFetcher.h"
 #include "LauncherConfig.h"
-#include "CurlDownloader.h"
 #include "ArchiveExtractor.h"
 #include <nlohmann/json.hpp>
 #include <date.h>
@@ -23,49 +25,6 @@
 #include <string>
 
 using json = nlohmann::json;
-
-class CurlThread : public QThread
-{
-    Q_OBJECT
-public:
-    bool continueDownload = true;
-    std::vector<std::uint8_t> data;
-    CurlThread(const std::string& url)
-    {
-        m_downloader = std::make_unique<CurlDownloader>(url, [&](double total, double current) -> bool {
-            emit progressChanged(total, current);
-            return continueDownload;
-        });
-    }
-
-    void run()
-    {
-        data = m_downloader->get();
-        return;
-    }
-
-    QString error() const
-    {
-        return QString(m_downloader->getError().c_str());
-    }
-
-    Release release() const
-    {
-        return m_release;
-    }
-
-    void setRelease(Release rel)
-    {
-        m_release = rel;
-    }
-
-signals:
-    void progressChanged(double total, double current);
-
-private:
-    std::unique_ptr<CurlDownloader> m_downloader;
-    Release m_release;
-};
 
 /// Represents an entry in the installation list
 class InstallationEntry : public QObject
@@ -113,7 +72,19 @@ static void createLinkToRelease(QString tagName)
 
     QDir current = QDir::home();
     current.cd(".REGoth");
-    if(current.cd("current")) current.removeRecursively();
+    if (current.cd("current")) {
+#ifdef Q_OS_WIN
+        {
+            QProcess proc;
+            proc.setWorkingDirectory(home.absolutePath());
+            auto path = current.absolutePath().replace('/', "\\");
+            proc.start("cmd.exe", QStringList() << "/c" << "rmdir" << path);
+            proc.waitForFinished();
+        }
+#else
+        current.removeRecursively();
+#endif
+    }
 
     QDir version = QDir::home();
     version.cd(".REGoth");
@@ -121,7 +92,13 @@ static void createLinkToRelease(QString tagName)
     version.cd(tagName);
 
 #ifdef Q_OS_WIN
-    QFile::link(version.absolutePath(), home.absoluteFilePath("current") + QString(".lnk"));
+    {
+        QProcess proc;
+        proc.setWorkingDirectory(home.absolutePath());
+        auto path = version.absolutePath().replace('/', "\\");
+        proc.start("cmd.exe", QStringList() << "/c" << "mklink" << "/J" << "current" << path);
+        proc.waitForFinished();
+    }
 #else
     QFile::link(version.absolutePath(), home.absoluteFilePath("current"));
 #endif
@@ -137,6 +114,8 @@ public:
         , m_engine(engine)
     {
         m_ctx = engine.rootContext();
+        m_fetcher = std::make_unique<ReleaseFetcher>(cfg.getReleasesEndpoint());
+        m_downloadManager = std::make_unique<QNetworkAccessManager>();
 
         for (const auto& inst : cfg.getGothicInstallations()) {
             InstallationEntry *entry = new InstallationEntry();
@@ -159,7 +138,7 @@ public:
         {
             QObject *dialog = m_root->findChild<QObject*>("FirstStartupDialog");
             connect(dialog, SIGNAL(yes()),
-                SLOT(downloadLatestVersion()));
+                SLOT(checkNewReleases()));
             QMetaObject::invokeMethod(dialog, "open");
         }
 
@@ -169,36 +148,61 @@ public:
         connect(m_root, SIGNAL(playGame(QString)),
                 SLOT(playGame(QString)));
 
+        connect(m_root, SIGNAL(removeInstallation(int)),
+                SLOT(removeInstallation(int)));
+
         connect(m_root, SIGNAL(checkNewReleases()),
                 SLOT(checkNewReleases()));
+
+        m_reply = nullptr;
+        m_rel = {};
     }
 
 public slots:
-    void downloadLatestVersion()
+    void downloadLatestVersion(std::optional<Release> rel)
     {
-        ReleaseFetcher fetcher(m_cfg.getReleasesEndpoint());
+        if (rel.has_value())
+        {
+            if (!m_cfg.getDefaultRelease().empty() && !m_cfg.getReleases().empty()) {
+                date::Date latestDate = date::Date::fromIsoDatetime(rel.value().ReleaseDate);
+                for (const auto& rel : m_cfg.getReleases()) {
+                    date::Date relDate = date::Date::fromIsoDatetime(rel.ReleaseDate);
+                    if (relDate >= latestDate) {
+                        QObject *dialog = m_root->findChild<QObject*>("UpToDateDialog");
+                        QMetaObject::invokeMethod(dialog, "open");
+                        return;
+                    }
+                }
+            }
 
-        Release rel;
-        fetcher.getLatestRelease(&rel);
+            QObject *dialog = m_root->findChild<QObject*>("VersionDownloadDialog");
+            QMetaObject::invokeMethod(dialog, "show");
+            dialog->setProperty("versionName", QString(rel.value().Name.c_str()));
+            dialog->setProperty("fileName", QString(rel.value().DownloadUrl.c_str()));
 
-        QObject *dialog = m_root->findChild<QObject*>("VersionDownloadDialog");
-        QMetaObject::invokeMethod(dialog, "show");
-        dialog->setProperty("versionName", QString(rel.Name.c_str()));
-        dialog->setProperty("fileName", QString(rel.DownloadUrl.c_str()));
+            QNetworkRequest request;
+            request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+            request.setUrl(QUrl(rel.value().DownloadUrl.c_str()));
+            m_reply = m_downloadManager->get(request);
+            
 
-        m_downloadThread = new CurlThread(rel.DownloadUrl);
-        connect(m_downloadThread, SIGNAL(progressChanged(double, double)),
-            SLOT(updateProgress(double, double)));
-        connect(m_downloadThread, SIGNAL(finished()),
-            SLOT(downloadComplete()));
+            connect(m_reply, SIGNAL(downloadProgress(qint64, qint64)),
+                SLOT(updateProgress(qint64, qint64)));
+            connect(m_downloadManager.get(), SIGNAL(finished(QNetworkReply *)),
+                SLOT(downloadComplete(QNetworkReply *)));
+            connect(m_reply, SIGNAL(error(QNetworkReply::NetworkError)),
+                SLOT(downloadError(QNetworkReply::NetworkError)));
 
-        connect(dialog, SIGNAL(cancelDownload()),
-            SLOT(cancelDownload()));
+            connect(dialog, SIGNAL(cancelDownload()),
+                SLOT(cancelDownload()));
 
-        m_downloadThread->setRelease(rel);
-
-        // Run, Forest, run!
-        m_downloadThread->start();
+            m_rel = rel;
+        } 
+        else
+        {
+            QObject *dialog = m_root->findChild<QObject*>("UpToDateDialog");
+            QMetaObject::invokeMethod(dialog, "open");
+        }
     }
 
     void addInstallation(QString urlString)
@@ -210,57 +214,45 @@ public slots:
         m_cfg.getGothicInstallations().push_back(inst);
         InstallationEntry *entry = new InstallationEntry();
         entry->setName(QDir(urlString).dirName());
+#ifdef Q_OS_WIN
+        urlString = urlString.right(urlString.size() - 1);
+#endif
         entry->setUrl(urlString);
         m_installationList.push_back(entry);
         m_ctx->setContextProperty("installations", QVariant::fromValue(m_installationList));
     }
 
+    void removeInstallation(int position)
+    {
+        auto& installations = m_cfg.getGothicInstallations();
+        installations.erase(installations.begin() + position);
+
+        m_installationList.erase(m_installationList.begin() + position);
+        m_ctx->setContextProperty("installations", QVariant::fromValue(m_installationList));
+    }
+
     void checkNewReleases()
     {
-        ReleaseFetcher fetcher(m_cfg.getReleasesEndpoint());
-        Release latest;
-        fetcher.getLatestRelease(&latest);
-        if(!m_cfg.getDefaultRelease().empty() && !m_cfg.getReleases().empty())
-        {
-            date::Date latestDate = date::Date::fromIsoDatetime(latest.ReleaseDate);
-            for(const auto& rel : m_cfg.getReleases())
-            {
-                date::Date relDate = date::Date::fromIsoDatetime(rel.ReleaseDate);
-                if(relDate >= latestDate)
-                {
-                    QObject *dialog = m_root->findChild<QObject*>("UpToDateDialog");
-                    QMetaObject::invokeMethod(dialog, "open");
-                    return;
-                }
-            }
-        }
-
-        QObject *dialog = m_root->findChild<QObject*>("NewReleaseAvailableDialog");
-        dialog->setProperty("releaseName", QString(latest.Name.c_str()));
-        connect(dialog, SIGNAL(yes()),
-                SLOT(downloadLatestVersion()));
-        QMetaObject::invokeMethod(dialog, "open");
+        connect(m_fetcher.get(), SIGNAL(versionFetched(std::optional<Release>)),
+            SLOT(downloadLatestVersion(std::optional<Release>)));
+        m_fetcher->fetch();
     }
 
     void cancelDownload()
     {
-        m_downloadThread->continueDownload = false;
+        if (m_reply != nullptr) {
+            m_reply->abort();
+        }
     }
 
-    void downloadComplete()
+    void downloadComplete(QNetworkReply *reply)
     {
         QObject *dialog = m_root->findChild<QObject*>("VersionDownloadDialog");
         QMetaObject::invokeMethod(dialog, "close");
 
-        if(m_downloadThread->data.empty() && m_downloadThread->continueDownload)
+        if(!reply->error())
         {
-            QObject *dialog = m_root->findChild<QObject*>("DownloadErrorDialog");
-            dialog->setProperty("errorMessage", m_downloadThread->error());
-            QMetaObject::invokeMethod(dialog, "open");
-        }
-        else
-        {
-            Release r = m_downloadThread->release();
+            Release r = m_rel.value();
 
             QDir home = QDir::home();
             home.cd(".REGoth");
@@ -268,14 +260,24 @@ public slots:
             home.mkdir(r.Tag.c_str());
             home.cd(r.Tag.c_str());
 
-            extractArchive(m_downloadThread->data, home.absolutePath().toStdString());
+            auto buf = reply->readAll();
+            std::vector<std::uint8_t> data(buf.begin(), buf.end());
+
+            extractArchive(data, home.absolutePath().toStdString());
             m_cfg.getReleases().push_back(r);
             m_cfg.setDefaultRelease(r.Tag);
             createLinkToRelease(r.Tag.c_str());
         }
     }
 
-    void updateProgress(double total, double current)
+    void downloadError(QNetworkReply::NetworkError code)
+    {
+        QObject *dialog = m_root->findChild<QObject*>("DownloadErrorDialog");
+        dialog->setProperty("errorMessage", m_reply->errorString());
+        QMetaObject::invokeMethod(dialog, "open");
+    }
+
+    void updateProgress(qint64 current, qint64 total)
     {
         QObject *dialog = m_root->findChild<QObject*>("VersionDownloadDialog");
         if (total == 0)
@@ -285,7 +287,7 @@ public slots:
         else
         {
             dialog->setProperty("isIndeterminate", false);
-            dialog->setProperty("progress", (float)(current / total));
+            dialog->setProperty("progress", (float)current / (float)total);
         }
     }
 
@@ -296,12 +298,21 @@ public slots:
         home.cd(".REGoth");
         home.mkdir("logs");
         home.cd("logs");
-        QString logname = QString("crashlog_") + QDateTime::currentDateTime().toString("yyyy-MM-ddTHH:mm:ss") + QString(".txt");
+        QString logname = QString("crashlog_") + QDateTime::currentDateTime().toString("yyyy-MM-ddTHH_mm_ss") + QString(".txt");
         QString logfilePath = home.absoluteFilePath(logname);
         home.cdUp();
         home.cd("current");
-        proc.setWorkingDirectory(home.absolutePath());
-        proc.start(home.absoluteFilePath("REGoth"), QStringList() << "-g" << url);
+
+#ifdef Q_OS_WIN
+        QString executable = home.absoluteFilePath("REGoth.exe");
+        logfilePath = logfilePath.replace('/', "\\");
+#else
+        QString executable = home.absoluteFilePath("REGoth");
+#endif
+        QString workingDirectory = home.absolutePath();
+        std::string exec = executable.toStdString();
+        proc.setWorkingDirectory(workingDirectory);
+        proc.start(executable, QStringList() << "-g" << url);
         proc.waitForFinished(-1);
         int ecode = proc.exitCode();
         if(proc.exitCode() != 0)
@@ -321,12 +332,15 @@ public slots:
     }
 
 private:
-    CurlThread *m_downloadThread;
     QObject *m_root;
     QQmlContext *m_ctx;
     LauncherConfig& m_cfg;
     QList<QObject*> m_installationList;
     QQmlApplicationEngine& m_engine;
+    std::unique_ptr<ReleaseFetcher> m_fetcher;
+    std::unique_ptr<QNetworkAccessManager> m_downloadManager;
+    QNetworkReply *m_reply;
+    std::optional<Release> m_rel;
 };
 
 /// Open the config file in the home directory or creates it if it doesn't exist yet

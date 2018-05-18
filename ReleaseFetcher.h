@@ -18,17 +18,27 @@
 #define RELEASE_FETCHER_H
 
 #include <string>
+#include <QObject>
+#include <QUrl>
+#include <memory>
+#include <optional>
 #include "Release.h"
 
-class ReleaseFetcher
+class QNetworkAccessManager;
+
+class ReleaseFetcher : public QObject
 {
+    Q_OBJECT
 public:
     ReleaseFetcher(const std::string& url);
-    bool getLatestRelease(Release *rel);
+    void fetch();
+
+signals:
+    void versionFetched(std::optional<Release> rel);
 
 private:
-    std::string m_url;
-    
+    QUrl m_url;
+    std::unique_ptr<QNetworkAccessManager> m_nam;
 };
 
 #endif // RELEASE_FETCHER_H

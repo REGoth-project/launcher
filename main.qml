@@ -61,6 +61,7 @@ Window {
                 topText: name
                 subText: url
                 onPlayed: playGame(url)
+                onRemoved: removeInstallation(index)
             }
         }
     }

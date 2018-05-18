@@ -17,66 +17,68 @@
 #include <vector>
 #include <cstdint>
 #include <stdexcept>
+#include <QNetworkReply>
 #include <QDebug>
 #include "ReleaseFetcher.h"
-#include "CurlDownloader.h"
 #include "Release.h"
 
 using json = nlohmann::json;
 
 ReleaseFetcher::ReleaseFetcher(const std::string& url)
-    : m_url(url)
-{ }
-
-bool ReleaseFetcher::getLatestRelease(Release *rel)
+    : m_url(QUrl(url.c_str()))
 {
-    Q_ASSERT(rel != nullptr);
-    CurlDownloader downloader(m_url);
-    auto rawData = downloader.get();
-    if (rawData.empty())
-    {
-        throw std::runtime_error(downloader.getError());
-    }
-    rawData.push_back(0);
+    m_nam = std::make_unique<QNetworkAccessManager>();
 
-    std::string stringData((const char *)rawData.data());
-    json data = json::parse(stringData);
-
-    json compatibleRelease;
-    json compatibleAsset;
-    for (const json& release : data)
-    {
-        for (const json& asset : release["assets"])
+    QObject::connect(m_nam.get(), &QNetworkAccessManager::finished, [=](QNetworkReply *reply) {
+        if (reply->error())
         {
-            std::string assetName = asset["name"].get<std::string>();
-            bool good = false;
+            versionFetched({});
+            return;
+        }
+
+        json data = json::parse(reply->readAll().toStdString());
+        json compatibleRelease;
+        json compatibleAsset;
+        for (const json& release : data) {
+            for (const json& asset : release["assets"]) {
+                std::string assetName = asset["name"].get<std::string>();
+                bool good = false;
 #if defined (Q_OS_WIN32)
-            good = assetName.find("linux") == std::string::npos &&
-                assetName.find("android") == std::string::npos &&
-                assetName.find("osx") == std::string::npos;
+                good = assetName.find("linux") == std::string::npos &&
+                    assetName.find("android") == std::string::npos &&
+                    assetName.find("osx") == std::string::npos;
 #elif defined (Q_OS_MACOS)
-            good = assetName.find("osx") != std::string::npos;
+                good = assetName.find("osx") != std::string::npos;
 #else
-            good = assetName.find("linux") != std::string::npos;
+                good = assetName.find("linux") != std::string::npos;
 #endif
 
-            if (good)
-            {
-                compatibleAsset = asset;
-                compatibleRelease = release;
-                goto foundRelease;
+                if (good) {
+                    compatibleAsset = asset;
+                    compatibleRelease = release;
+                    goto foundRelease;
+                }
             }
         }
-    }
 
-    return false;
+        versionFetched({});
+        return;
 
-foundRelease:
-    rel->Name = compatibleRelease["name"].get<std::string>();
-    rel->Tag = compatibleRelease["tag_name"].get<std::string>();
-    rel->Url = compatibleRelease["url"].get<std::string>();
-    rel->ReleaseDate = compatibleRelease["published_at"].get<std::string>();
-    rel->Prerelease = compatibleRelease["prerelease"].get<bool>();
-    rel->DownloadUrl = compatibleAsset["browser_download_url"].get<std::string>();
-    return true;
+    foundRelease:
+        Release rel;
+        rel.Name = compatibleRelease["name"].get<std::string>();
+        rel.Tag = compatibleRelease["tag_name"].get<std::string>();
+        rel.Url = compatibleRelease["url"].get<std::string>();
+        rel.ReleaseDate = compatibleRelease["published_at"].get<std::string>();
+        rel.Prerelease = compatibleRelease["prerelease"].get<bool>();
+        rel.DownloadUrl = compatibleAsset["browser_download_url"].get<std::string>();
+        versionFetched(rel);
+    });
+}
+
+void ReleaseFetcher::fetch()
+{
+    QNetworkRequest request;
+    request.setUrl(m_url);
+    m_nam->get(request);
 }

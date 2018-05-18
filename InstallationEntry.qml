@@ -56,6 +56,16 @@ Rectangle {
     }
 
     Button {
+        id: removeButton
+        anchors.right: playButton.left
+        height: parent.height
+
+        text: qsTr("Remove")
+        onClicked: removed()
+    }
+
+    Button {
+        id: playButton
         anchors.right: parent.right
         height: parent.height
 
